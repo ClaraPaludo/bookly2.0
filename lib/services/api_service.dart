@@ -1,9 +1,12 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  static const String baseUrl = 'http://10.0.2.2:3000';
+  static final String baseUrl = kIsWeb
+      ? 'http://localhost:3000'
+      : 'http://10.0.2.2:3000';
 
   static Uri _buildUri(String endpoint, [Map<String, String>? queryParams]) {
     return Uri.parse('$baseUrl$endpoint').replace(queryParameters: queryParams);
