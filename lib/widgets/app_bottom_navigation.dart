@@ -13,26 +13,16 @@ class AppBottomNavigation extends StatelessWidget {
   void _changePage(BuildContext context, int index) {
     if (index == currentIndex) return;
 
-    Widget page;
+    final pages = <Widget>[
+      const HomePage(),
+      const FriendsPage(),
+      const DeadlinesPage(),
+      const ProfilePage(),
+    ];
 
-    switch (index) {
-      case 0:
-        page = const HomePage();
-        break;
-      case 1:
-        page = const FriendsPage();
-        break;
-      case 2:
-        page = const DeadlinesPage();
-        break;
-      case 3:
-        page = const ProfilePage();
-        break;
-      default:
-        page = const HomePage();
-    }
-
-    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => page));
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => pages[index]));
   }
 
   @override
@@ -44,22 +34,22 @@ class AppBottomNavigation extends StatelessWidget {
         NavigationDestination(
           icon: Icon(Icons.home_outlined),
           selectedIcon: Icon(Icons.home),
-          label: "Início",
+          label: 'Início',
         ),
         NavigationDestination(
           icon: Icon(Icons.people_outline),
           selectedIcon: Icon(Icons.people),
-          label: "Amigos",
+          label: 'Amigos',
         ),
         NavigationDestination(
           icon: Icon(Icons.calendar_month_outlined),
           selectedIcon: Icon(Icons.calendar_month),
-          label: "Prazos",
+          label: 'Prazos',
         ),
         NavigationDestination(
           icon: Icon(Icons.person_outline),
           selectedIcon: Icon(Icons.person),
-          label: "Perfil",
+          label: 'Perfil',
         ),
       ],
     );
