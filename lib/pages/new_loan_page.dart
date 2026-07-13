@@ -5,6 +5,7 @@ import '../services/books_service.dart';
 import '../services/friends_services.dart';
 import '../services/loans_service.dart';
 import '../services/session_service.dart';
+import '../services/notification_service.dart';
 
 class NewLoanPage extends StatefulWidget {
   const NewLoanPage({super.key});
@@ -103,7 +104,7 @@ class _NewLoanPageState extends State<NewLoanPage> {
     try {
       final userId = await SessionService.getCurrentUserId();
 
-      await LoansService.createLoan(
+      final loan = await LoansService.createLoan(
         userId: userId,
         friendId: selectedFriend!['id'].toString(),
         bookId: selectedBook!['id'].toString(),
@@ -111,12 +112,16 @@ class _NewLoanPageState extends State<NewLoanPage> {
         loanDate: DateTime.now(),
       );
 
+      await NotificationService.scheduleLoanReminders(
+        loanId: loan['id'] as int,
+        bookTitle: selectedBook!['title']?.toString() ?? 'seu livro',
+        dueDate: selectedDueDate!,
+      );
+
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Empréstimo cadastrado com sucesso!'),
-        ),
+        const SnackBar(content: Text('Empréstimo cadastrado com sucesso!')),
       );
 
       Navigator.pop(context, true);
@@ -139,11 +144,9 @@ class _NewLoanPageState extends State<NewLoanPage> {
   }
 
   void showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   String formatDate(DateTime? date) {
@@ -170,12 +173,10 @@ class _NewLoanPageState extends State<NewLoanPage> {
       ),
       body: SafeArea(
         child: isLoading
-            ? const Center(
-                child: CircularProgressIndicator(),
-              )
+            ? const Center(child: CircularProgressIndicator())
             : errorMessage != null
-                ? buildErrorState()
-                : buildContent(),
+            ? buildErrorState()
+            : buildContent(),
       ),
     );
   }
@@ -220,8 +221,7 @@ class _NewLoanPageState extends State<NewLoanPage> {
       return const _EmptyCard(
         icon: Icons.people_outline,
         title: 'Nenhum amigo cadastrado',
-        description:
-            'Cadastre um amigo antes de criar um empréstimo.',
+        description: 'Cadastre um amigo antes de criar um empréstimo.',
       );
     }
 
@@ -266,9 +266,7 @@ class _NewLoanPageState extends State<NewLoanPage> {
                       children: [
                         Text(
                           name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         if (email != null && email.trim().isNotEmpty)
                           Text(
@@ -282,10 +280,7 @@ class _NewLoanPageState extends State<NewLoanPage> {
                     ),
                   ),
                   if (isSelected)
-                    Icon(
-                      Icons.check_circle,
-                      color: AppColors.primary,
-                    ),
+                    Icon(Icons.check_circle, color: AppColors.primary),
                 ],
               ),
             ),
@@ -352,9 +347,7 @@ class _NewLoanPageState extends State<NewLoanPage> {
                       children: [
                         Text(
                           title,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         Text(
                           author,
@@ -375,10 +368,7 @@ class _NewLoanPageState extends State<NewLoanPage> {
                     ),
                   ),
                   if (isSelected)
-                    Icon(
-                      Icons.check_circle,
-                      color: AppColors.primary,
-                    ),
+                    Icon(Icons.check_circle, color: AppColors.primary),
                 ],
               ),
             ),
@@ -407,17 +397,12 @@ class _NewLoanPageState extends State<NewLoanPage> {
         ),
         child: Row(
           children: [
-            Icon(
-              Icons.calendar_month_outlined,
-              color: AppColors.primary,
-            ),
+            Icon(Icons.calendar_month_outlined, color: AppColors.primary),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 formatDate(selectedDueDate),
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                ),
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
             const Icon(Icons.chevron_right),
@@ -452,9 +437,7 @@ class _NewLoanPageState extends State<NewLoanPage> {
             : const Icon(Icons.check),
         label: Text(
           isSaving ? 'Salvando...' : 'Confirmar empréstimo',
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-          ),
+          style: const TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
     );
@@ -467,9 +450,9 @@ class _NewLoanPageState extends State<NewLoanPage> {
         child: _EmptyCard(
           icon: Icons.error_outline,
           title: 'Erro ao carregar dados',
-         description:
-    'Erro ao carregar os dados locais.\nTente fechar e abrir o aplicativo novamente.\n\n$errorMessage',
-    ),
+          description:
+              'Erro ao carregar os dados locais.\nTente fechar e abrir o aplicativo novamente.\n\n$errorMessage',
+        ),
       ),
     );
   }
@@ -497,11 +480,7 @@ class _EmptyCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Icon(
-            icon,
-            size: 44,
-            color: AppColors.primary,
-          ),
+          Icon(icon, size: 44, color: AppColors.primary),
           const SizedBox(height: 12),
           Text(
             title,
@@ -516,9 +495,7 @@ class _EmptyCard extends StatelessWidget {
           Text(
             description,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.grey[700],
-            ),
+            style: TextStyle(color: Colors.grey[700]),
           ),
         ],
       ),

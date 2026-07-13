@@ -2,14 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../core/app_colors.dart';
 import '../services/loans_service.dart';
+import '../services/notification_service.dart';
 
 class LoanDetailPage extends StatefulWidget {
   final String loanId;
 
-  const LoanDetailPage({
-    super.key,
-    required this.loanId,
-  });
+  const LoanDetailPage({super.key, required this.loanId});
 
   @override
   State<LoanDetailPage> createState() => _LoanDetailPageState();
@@ -60,13 +58,12 @@ class _LoanDetailPageState extends State<LoanDetailPage> {
 
     try {
       await LoansService.markLoanAsReturned(widget.loanId);
+      await NotificationService.cancelLoanReminders(int.parse(widget.loanId));
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Empréstimo marcado como devolvido!'),
-        ),
+        const SnackBar(content: Text('Empréstimo marcado como devolvido!')),
       );
 
       await loadLoan();
@@ -204,16 +201,12 @@ class _LoanDetailPageState extends State<LoanDetailPage> {
       ),
       body: SafeArea(
         child: isLoading
-            ? const Center(
-                child: CircularProgressIndicator(),
-              )
+            ? const Center(child: CircularProgressIndicator())
             : errorMessage != null
-                ? buildErrorState()
-                : loan == null
-                    ? const Center(
-                        child: Text('Empréstimo não encontrado.'),
-                      )
-                    : buildContent(),
+            ? buildErrorState()
+            : loan == null
+            ? const Center(child: Text('Empréstimo não encontrado.'))
+            : buildContent(),
       ),
     );
   }
@@ -275,9 +268,7 @@ class _LoanDetailPageState extends State<LoanDetailPage> {
                     : const Icon(Icons.check_circle_outline),
                 label: Text(
                   isUpdating ? 'Atualizando...' : 'Marcar como devolvido',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
             ),
@@ -297,9 +288,7 @@ class _LoanDetailPageState extends State<LoanDetailPage> {
       decoration: BoxDecoration(
         color: statusColor.withValues(alpha: .12),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: statusColor.withValues(alpha: .35),
-        ),
+        border: Border.all(color: statusColor.withValues(alpha: .35)),
       ),
       child: Column(
         children: [
@@ -307,8 +296,8 @@ class _LoanDetailPageState extends State<LoanDetailPage> {
             statusText == 'Devolvido'
                 ? Icons.check_circle_outline
                 : statusText == 'Atrasado'
-                    ? Icons.warning_amber_rounded
-                    : Icons.schedule,
+                ? Icons.warning_amber_rounded
+                : Icons.schedule,
             color: statusColor,
             size: 44,
           ),
@@ -325,10 +314,7 @@ class _LoanDetailPageState extends State<LoanDetailPage> {
           Text(
             getDeadlineMessage(loanData),
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: statusColor,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(color: statusColor, fontWeight: FontWeight.w600),
           ),
         ],
       ),
@@ -430,10 +416,7 @@ class _InfoCard extends StatelessWidget {
             children: [
               CircleAvatar(
                 backgroundColor: AppColors.primary.withValues(alpha: .12),
-                child: Icon(
-                  icon,
-                  color: AppColors.primary,
-                ),
+                child: Icon(icon, color: AppColors.primary),
               ),
               const SizedBox(width: 12),
               Text(
@@ -458,10 +441,7 @@ class _InfoLine extends StatelessWidget {
   final String label;
   final String value;
 
-  const _InfoLine({
-    required this.label,
-    required this.value,
-  });
+  const _InfoLine({required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
@@ -483,9 +463,7 @@ class _InfoLine extends StatelessWidget {
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
-                fontWeight: FontWeight.w500,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.w500),
             ),
           ),
         ],
