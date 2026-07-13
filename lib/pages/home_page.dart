@@ -189,11 +189,11 @@ class _HomePageState extends State<HomePage> {
                 else if (errorMessage != null)
                   buildErrorState()
                 else ...[
+                  buildBooksSection(),
+                  const SizedBox(height: 30),
                   buildStatistics(),
                   const SizedBox(height: 30),
                   buildRecentLoans(),
-                  const SizedBox(height: 30),
-                  buildBooksSection(),
                 ],
               ],
             ),
@@ -399,11 +399,14 @@ class _HomePageState extends State<HomePage> {
         ),
         const SizedBox(height: 15),
         if (visibleBooks.isEmpty)
-          const _EmptyCard(
-            icon: Icons.menu_book_outlined,
-            title: 'Nenhum livro cadastrado',
-            description:
-                'Clique no botão “Livro” para cadastrar o primeiro livro da sua biblioteca.',
+          _EmptyCard(
+            icon: Icons.search_off,
+            title: search.isEmpty
+                ? 'Nenhum livro cadastrado'
+                : 'Nenhum resultado encontrado',
+            description: search.isEmpty
+                ? 'Clique no botão “Livro” para cadastrar o primeiro livro.'
+                : 'Não encontramos livros para “$search”.',
           )
         else
           SizedBox(
