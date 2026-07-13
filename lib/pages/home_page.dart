@@ -19,9 +19,25 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final TextEditingController searchController = TextEditingController();
+  String search = '';
+
+  List<Map<String, dynamic>> get filteredBooks {
+    final query = search.trim().toLowerCase();
+
+    if (query.isEmpty) return books;
+
+    return books.where((book) {
+      final title = book['title']?.toString().toLowerCase() ?? '';
+      final author = book['author']?.toString().toLowerCase() ?? '';
+      final category = book['category']?.toString().toLowerCase() ?? '';
+
+      return title.contains(query) ||
+          author.contains(query) ||
+          category.contains(query);
+    }).toList();
+  }
 
   bool isLoading = true;
-  String search = '';
   String? errorMessage;
 
   List<Map<String, dynamic>> books = [];
@@ -71,29 +87,12 @@ class _HomePageState extends State<HomePage> {
   Future<void> openAddBookPage() async {
     final result = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(
-        builder: (_) => const AddBookPage(),
-      ),
+      MaterialPageRoute(builder: (_) => const AddBookPage()),
     );
 
     if (result == true) {
       await loadHomeData();
     }
-  }
-
-  List<Map<String, dynamic>> get filteredBooks {
-    if (search.trim().isEmpty) {
-      return books;
-    }
-
-    final searchLower = search.toLowerCase();
-
-    return books.where((book) {
-      final title = book['title']?.toString().toLowerCase() ?? '';
-      final author = book['author']?.toString().toLowerCase() ?? '';
-
-      return title.contains(searchLower) || author.contains(searchLower);
-    }).toList();
   }
 
   int get pendingLoans {
@@ -224,10 +223,7 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 5),
             Text(
               'Bem-vinda de volta 📚',
-              style: TextStyle(
-                color: Colors.grey[700],
-                fontSize: 15,
-              ),
+              style: TextStyle(color: Colors.grey[700], fontSize: 15),
             ),
           ],
         ),
@@ -254,8 +250,19 @@ class _HomePageState extends State<HomePage> {
         });
       },
       decoration: InputDecoration(
-        hintText: 'Buscar livros...',
+        hintText: 'Buscar meus livros...',
         prefixIcon: const Icon(Icons.search),
+        suffixIcon: search.isNotEmpty
+            ? IconButton(
+                icon: const Icon(Icons.clear),
+                onPressed: () {
+                  searchController.clear();
+                  setState(() {
+                    search = '';
+                  });
+                },
+              )
+            : null,
         filled: true,
         fillColor: AppColors.white,
         border: OutlineInputBorder(
@@ -303,35 +310,33 @@ class _HomePageState extends State<HomePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-  children: [
-    Text(
-      'Empréstimos Recentes',
-      style: TextStyle(
-        fontSize: 22,
-        fontWeight: FontWeight.bold,
-        color: AppColors.primary,
-      ),
-    ),
-    TextButton.icon(
-      onPressed: () async {
-        final result = await Navigator.push<bool>(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const NewLoanPage(),
-          ),
-        );
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Empréstimos Recentes',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: AppColors.primary,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () async {
+                final result = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(builder: (_) => const NewLoanPage()),
+                );
 
-        if (result == true) {
-          await loadHomeData();
-        }
-      },
-      icon: const Icon(Icons.add),
-      label: const Text('Novo'),
-    ),
-  ],
-),
-const SizedBox(height: 15),
+                if (result == true) {
+                  await loadHomeData();
+                }
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Novo'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 15),
         if (recentLoans.isEmpty)
           const _EmptyCard(
             icon: Icons.assignment_outlined,
@@ -349,32 +354,31 @@ const SizedBox(height: 15),
             final status = loan['status']?.toString() ?? 'PENDING';
 
             return Padding(
-  padding: const EdgeInsets.only(bottom: 12),
-  child: InkWell(
-    borderRadius: BorderRadius.circular(18),
-    onTap: () async {
-      final result = await Navigator.push<bool>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => LoanDetailPage(
-            loanId: loan['id'].toString(),
-          ),
-        ),
-      );
+              padding: const EdgeInsets.only(bottom: 12),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: () async {
+                  final result = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          LoanDetailPage(loanId: loan['id'].toString()),
+                    ),
+                  );
 
-      if (result == true) {
-        await loadHomeData();
-      }
-    },
-    child: _LoanCard(
-      name: friendName,
-      book: bookTitle,
-      status: getStatusText(status),
-      statusColor: getStatusColor(status),
-      deadline: formatDate(loan['dueDate']?.toString()),
-    ),
-  ),
-);
+                  if (result == true) {
+                    await loadHomeData();
+                  }
+                },
+                child: _LoanCard(
+                  name: friendName,
+                  book: bookTitle,
+                  status: getStatusText(status),
+                  statusColor: getStatusColor(status),
+                  deadline: formatDate(loan['dueDate']?.toString()),
+                ),
+              ),
+            );
           }),
       ],
     );
@@ -382,7 +386,6 @@ const SizedBox(height: 15),
 
   Widget buildBooksSection() {
     final visibleBooks = filteredBooks;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -413,15 +416,19 @@ const SizedBox(height: 15),
                 final book = visibleBooks[index];
 
                 return BookCover(
-  bookId: book['id'].toString(),
-  image: getBookCover(book),
-  title: book['title']?.toString() ?? 'Sem título',
-  author: book['author']?.toString() ?? 'Autor não informado',
-  year: '2026',
-  category: book['category']?.toString() ?? 'Sem categoria',
-  status: book['available'] == true ? 'Disponível' : 'Emprestado',
-  description: book['description']?.toString() ?? 'Sem descrição.',
-);
+                  bookId: book['id'].toString(),
+                  image: getBookCover(book),
+                  title: book['title']?.toString() ?? 'Sem título',
+                  author: book['author']?.toString() ?? 'Autor não informado',
+                  year: '2026',
+                  category: book['category']?.toString() ?? 'Sem categoria',
+                  status: book['available'] == true
+                      ? 'Disponível'
+                      : 'Emprestado',
+                  description:
+                      book['description']?.toString() ?? 'Sem descrição.',
+                  onBookChanged: loadHomeData,
+                );
               },
             ),
           ),
@@ -433,9 +440,9 @@ const SizedBox(height: 15),
     return _EmptyCard(
       icon: Icons.error_outline,
       title: 'Erro ao carregar dados',
-     description:
-    'Erro ao carregar os dados locais.\nTente fechar e abrir o aplicativo novamente.\n\n$errorMessage',
-     );
+      description:
+          'Erro ao carregar os dados locais.\nTente fechar e abrir o aplicativo novamente.\n\n$errorMessage',
+    );
   }
 }
 
@@ -476,17 +483,11 @@ class _LoanCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  name,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
+                Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
                 Text(book),
                 Text(
                   'Prazo: $deadline',
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
                 ),
               ],
             ),
@@ -499,10 +500,7 @@ class _LoanCard extends StatelessWidget {
             ),
             child: Text(
               status,
-              style: TextStyle(
-                color: statusColor,
-                fontWeight: FontWeight.w600,
-              ),
+              style: TextStyle(color: statusColor, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -570,11 +568,7 @@ class _EmptyCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Icon(
-            icon,
-            size: 44,
-            color: AppColors.primary,
-          ),
+          Icon(icon, size: 44, color: AppColors.primary),
           const SizedBox(height: 12),
           Text(
             title,
@@ -589,9 +583,7 @@ class _EmptyCard extends StatelessWidget {
           Text(
             description,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.grey[700],
-            ),
+            style: TextStyle(color: Colors.grey[700]),
           ),
         ],
       ),
@@ -608,31 +600,33 @@ class BookCover extends StatelessWidget {
   final String description;
   final String status;
   final String bookId;
+  final Future<void> Function()? onBookChanged;
 
   const BookCover({
-  super.key,
-  required this.bookId,
-  required this.image,
-  required this.title,
-  required this.author,
-  required this.year,
-  required this.category,
-  required this.description,
-  required this.status,
-});
+    super.key,
+    required this.bookId,
+    required this.image,
+    required this.title,
+    required this.author,
+    required this.year,
+    required this.category,
+    required this.description,
+    required this.status,
+    this.onBookChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
+      onTap: () async {
+        final result = await Navigator.push<bool>(
           context,
-          MaterialPageRoute(
-            builder: (context) => BookDetailPage(
-  bookId: bookId,
-),
-          ),
+          MaterialPageRoute(builder: (_) => BookDetailPage(bookId: bookId)),
         );
+
+        if (result == true) {
+          await onBookChanged?.call();
+        }
       },
       child: Container(
         width: 125,
