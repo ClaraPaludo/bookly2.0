@@ -60,3 +60,10 @@ No Flutter Web, os dados dependem do armazenamento local do navegador. Para test
 
 ```bash
 flutter run -d chrome --web-port 5000
+## Como acessar e executar o projeto
+
+O código-fonte do projeto Bookly está disponível publicamente no GitHub pelo link: https://github.com/ClaraPaludo/bookly2.0. Para executar o projeto localmente, é necessário ter o Flutter instalado e configurado na máquina. Após acessar o repositório, o usuário pode clonar o projeto, abrir a pasta no editor de código, instalar as dependências com o comando `flutter pub get` e executar o aplicativo no navegador Chrome com o comando `flutter run -d chrome --web-port 5000`.
+
+O uso da porta fixa `5000` é recomendado porque o projeto utiliza SQLite local no navegador. Dessa forma, durante os testes no Flutter Web, os dados têm maior chance de continuar salvos ao fechar e abrir novamente o projeto no mesmo navegador. O aplicativo também pode ser executado em um emulador Android ou em um dispositivo físico configurado com Flutter, utilizando o comando `flutter run`.
+
+Como o Bookly utiliza SQLite local, os dados são armazenados no próprio dispositivo ou navegador onde o aplicativo está sendo executado. No Flutter Web, esses dados ficam salvos no armazenamento local do navegador e podem ser perdidos caso o usuário limpe os dados do site, limpe o cache, utilize aba anônima ou acesse o projeto por outro navegador ou dispositivo. Em Android ou Windows, os dados ficam salvos localmente no aplicativo/dispositivo.
