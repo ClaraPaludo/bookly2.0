@@ -5,14 +5,18 @@ class UsersService {
     required String name,
     required String email,
     required String password,
+    String? profilePhotoUrl,
   }) async {
     final db = await AppDatabase.database;
+    final now = DateTime.now().toIso8601String();
 
     final id = await db.insert('users', {
-      'name': name,
-      'email': email,
+      'name': name.trim().isEmpty ? 'User123' : name.trim(),
+      'email': email.trim().toLowerCase(),
       'password': password,
-      'createdAt': DateTime.now().toIso8601String(),
+      'profilePhotoUrl': profilePhotoUrl,
+      'createdAt': now,
+      'updatedAt': now,
     });
 
     final user = await getUserById(id.toString());
@@ -24,11 +28,15 @@ class UsersService {
     return user;
   }
 
-  static Future<List<Map<String, dynamic>>> listUsers() async {
+  static Future<List<Map<String, dynamic>>> listUsers({String? search}) async {
     final db = await AppDatabase.database;
+
+    final hasSearch = search != null && search.trim().isNotEmpty;
 
     final result = await db.query(
       'users',
+      where: hasSearch ? 'name LIKE ? OR email LIKE ?' : null,
+      whereArgs: hasSearch ? ['%${search.trim()}%', '%${search.trim()}%'] : null,
       orderBy: 'createdAt DESC',
     );
 
@@ -45,9 +53,22 @@ class UsersService {
       limit: 1,
     );
 
-    if (result.isEmpty) {
-      return null;
-    }
+    if (result.isEmpty) return null;
+
+    return Map<String, dynamic>.from(result.first);
+  }
+
+  static Future<Map<String, dynamic>?> getUserByEmail(String email) async {
+    final db = await AppDatabase.database;
+
+    final result = await db.query(
+      'users',
+      where: 'email = ?',
+      whereArgs: [email.trim().toLowerCase()],
+      limit: 1,
+    );
+
+    if (result.isEmpty) return null;
 
     return Map<String, dynamic>.from(result.first);
   }
@@ -57,14 +78,29 @@ class UsersService {
     String? name,
     String? email,
     String? password,
+    String? profilePhotoUrl,
   }) async {
     final db = await AppDatabase.database;
 
-    final data = <String, dynamic>{};
+    final data = <String, dynamic>{
+      'updatedAt': DateTime.now().toIso8601String(),
+    };
 
-    if (name != null) data['name'] = name;
-    if (email != null) data['email'] = email;
-    if (password != null) data['password'] = password;
+    if (name != null) {
+      data['name'] = name.trim().isEmpty ? 'User123' : name.trim();
+    }
+
+    if (email != null) {
+      data['email'] = email.trim().toLowerCase();
+    }
+
+    if (password != null) {
+      data['password'] = password;
+    }
+
+    if (profilePhotoUrl != null) {
+      data['profilePhotoUrl'] = profilePhotoUrl;
+    }
 
     await db.update(
       'users',
@@ -90,5 +126,13 @@ class UsersService {
       where: 'id = ?',
       whereArgs: [int.parse(id)],
     );
+  }
+
+  static Future<int> countUsers() async {
+    final db = await AppDatabase.database;
+
+    final result = await db.rawQuery('SELECT COUNT(*) AS total FROM users');
+
+    return result.first['total'] as int? ?? 0;
   }
 }

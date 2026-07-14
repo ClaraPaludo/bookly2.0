@@ -1,9 +1,14 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../core/app_colors.dart';
 import '../services/books_service.dart';
 import '../services/loans_service.dart';
 import '../services/session_service.dart';
+import '../services/users_service.dart';
 import '../widgets/app_bottom_navigation.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -15,16 +20,30 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   bool isLoading = true;
+  bool isSaving = false;
   String? errorMessage;
 
   Map<String, dynamic>? currentUser;
   List<Map<String, dynamic>> books = [];
   List<Map<String, dynamic>> loans = [];
 
+  final nameController = TextEditingController();
+  final emailController = TextEditingController();
+  final ImagePicker picker = ImagePicker();
+
+  Uint8List? selectedProfileImageBytes;
+
   @override
   void initState() {
     super.initState();
     loadProfileData();
+  }
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    emailController.dispose();
+    super.dispose();
   }
 
   Future<void> loadProfileData() async {
@@ -46,6 +65,7 @@ class _ProfilePageState extends State<ProfilePage> {
         currentUser = user;
         books = loadedBooks;
         loans = loadedLoans;
+        selectedProfileImageBytes = null;
         isLoading = false;
       });
     } catch (error) {
@@ -58,9 +78,41 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  int get totalBooks {
-    return books.length;
+  String get userName {
+    final name = currentUser?['name']?.toString().trim();
+
+    if (name == null || name.isEmpty || name == 'Usuário Bookly') {
+      return 'User123';
+    }
+
+    return name;
   }
+
+  String get userEmail {
+    final email = currentUser?['email']?.toString().trim();
+
+    if (email == null || email.isEmpty) {
+      return 'usuario@bookly.com';
+    }
+
+    return email;
+  }
+
+  String get initials {
+    final name = userName.trim();
+
+    if (name.isEmpty) return '?';
+
+    final parts = name.split(' ');
+
+    if (parts.length == 1) {
+      return parts.first[0].toUpperCase();
+    }
+
+    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+  }
+
+  int get totalBooks => books.length;
 
   int get totalPending {
     return loans.where((loan) => getVisualStatus(loan) == 'PENDING').length;
@@ -74,109 +126,259 @@ class _ProfilePageState extends State<ProfilePage> {
     return loans.where((loan) => getVisualStatus(loan) == 'RETURNED').length;
   }
 
-  String get userName {
-    return currentUser?['name']?.toString() ?? 'Usuário Bookly';
-  }
-
-  String get userEmail {
-    return currentUser?['email']?.toString() ?? 'usuario@bookly.com';
-  }
-
-  String get initials {
-    final parts = userName.trim().split(' ');
-
-    if (parts.isEmpty || userName.trim().isEmpty) {
-      return '?';
-    }
-
-    if (parts.length == 1) {
-      return parts.first[0].toUpperCase();
-    }
-
-    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
-  }
-
   String getVisualStatus(Map<String, dynamic> loan) {
     final status = loan['status']?.toString() ?? 'PENDING';
 
-    if (status == 'RETURNED') {
-      return 'RETURNED';
-    }
+    if (status == 'RETURNED') return 'RETURNED';
 
     final dueDate = DateTime.tryParse(loan['dueDate']?.toString() ?? '');
 
-    if (dueDate == null) {
-      return status;
-    }
+    if (dueDate == null) return status;
 
     final today = DateTime.now();
     final todayOnly = DateTime(today.year, today.month, today.day);
     final dueOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
 
-    if (dueOnly.isBefore(todayOnly)) {
-      return 'LATE';
-    }
-
-    return 'PENDING';
+    return dueOnly.isBefore(todayOnly) ? 'LATE' : 'PENDING';
   }
 
-  String getStatusText(String status) {
-    switch (status) {
-      case 'RETURNED':
-        return 'Devolvido';
-      case 'LATE':
-        return 'Atrasado';
-      case 'PENDING':
-      default:
-        return 'Pendente';
+  Uint8List? decodeBase64Image(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+
+    try {
+      final base64Text = value.contains(',') ? value.split(',').last : value;
+      return base64Decode(base64Text);
+    } catch (_) {
+      return null;
     }
   }
 
-  Color getStatusColor(String status) {
-    switch (status) {
-      case 'RETURNED':
-        return Colors.green;
-      case 'LATE':
-        return Colors.red;
-      case 'PENDING':
-      default:
-        return Colors.orange;
-    }
+  String? imageToBase64(Uint8List? bytes) {
+    if (bytes == null) return null;
+
+    return 'data:image/png;base64,${base64Encode(bytes)}';
   }
 
-  String formatDate(String? value) {
-    if (value == null || value.isEmpty) {
-      return 'Sem data';
-    }
-
-    final date = DateTime.tryParse(value);
-
-    if (date == null) {
-      return 'Sem data';
-    }
-
-    final day = date.day.toString().padLeft(2, '0');
-    final month = date.month.toString().padLeft(2, '0');
-    final year = date.year.toString();
-
-    return '$day/$month/$year';
+  Uint8List? get profileImageBytes {
+    return selectedProfileImageBytes ??
+        decodeBase64Image(currentUser?['profilePhotoUrl']?.toString());
   }
 
-  List<Map<String, dynamic>> get recentLoans {
-    final sortedLoans = [...loans];
+  Future<void> pickProfileImage({StateSetter? modalSetState}) async {
+    final image = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
 
-    sortedLoans.sort((a, b) {
-      final dateA = DateTime.tryParse(a['createdAt']?.toString() ?? '');
-      final dateB = DateTime.tryParse(b['createdAt']?.toString() ?? '');
+    if (image == null) return;
 
-      if (dateA == null && dateB == null) return 0;
-      if (dateA == null) return 1;
-      if (dateB == null) return -1;
+    final bytes = await image.readAsBytes();
 
-      return dateB.compareTo(dateA);
+    setState(() {
+      selectedProfileImageBytes = bytes;
     });
 
-    return sortedLoans.take(5).toList();
+    modalSetState?.call(() {});
+  }
+
+  void openEditProfileSheet() {
+    nameController.text = userName == 'User123' ? '' : userName;
+    emailController.text = userEmail == 'usuario@bookly.com' ? '' : userEmail;
+    selectedProfileImageBytes = null;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.background,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (modalContext) {
+        return StatefulBuilder(
+          builder: (context, modalSetState) {
+            final imageBytes = selectedProfileImageBytes ??
+                decodeBase64Image(currentUser?['profilePhotoUrl']?.toString());
+
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 14,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 14,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    Container(
+                      width: 45,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[400],
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Editar perfil',
+                      style: TextStyle(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 22,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    GestureDetector(
+                      onTap: () {
+                        pickProfileImage(modalSetState: modalSetState);
+                      },
+                      child: CircleAvatar(
+                        radius: 48,
+                        backgroundColor: AppColors.primary,
+                        backgroundImage:
+                            imageBytes == null ? null : MemoryImage(imageBytes),
+                        child: imageBytes == null
+                            ? Text(
+                                initials,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 28,
+                                ),
+                              )
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: () {
+                        pickProfileImage(modalSetState: modalSetState);
+                      },
+                      icon: const Icon(Icons.photo_library_outlined),
+                      label: const Text('Escolher foto de perfil'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: nameController,
+                      decoration: inputDecoration('Nome de usuário'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: inputDecoration('E-mail opcional'),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        onPressed: isSaving
+                            ? null
+                            : () {
+                                saveProfile(modalContext);
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        icon: isSaving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.save_outlined),
+                        label: Text(
+                          isSaving ? 'Salvando...' : 'Salvar perfil',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  InputDecoration inputDecoration(String label) {
+    return InputDecoration(
+      labelText: label,
+      filled: true,
+      fillColor: Colors.white,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: AppColors.primary, width: 1.5),
+      ),
+    );
+  }
+
+  Future<void> saveProfile(BuildContext modalContext) async {
+    final user = currentUser;
+
+    if (user == null) return;
+
+    final name = nameController.text.trim().isEmpty
+        ? 'User123'
+        : nameController.text.trim();
+
+    final email = emailController.text.trim().isEmpty
+        ? 'usuario@bookly.com'
+        : emailController.text.trim();
+
+    setState(() {
+      isSaving = true;
+    });
+
+    try {
+      await UsersService.updateUser(
+        id: user['id'].toString(),
+        name: name,
+        email: email,
+        profilePhotoUrl: imageToBase64(selectedProfileImageBytes),
+      );
+
+      if (!mounted) return;
+
+      Navigator.pop(modalContext);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Perfil atualizado com sucesso!')),
+      );
+
+      await loadProfileData();
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao salvar perfil: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          isSaving = false;
+        });
+      }
+    }
   }
 
   @override
@@ -188,29 +390,23 @@ class _ProfilePageState extends State<ProfilePage> {
           onRefresh: loadProfileData,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              children: [
-                if (isLoading)
-                  const Padding(
+            padding: const EdgeInsets.all(16),
+            child: isLoading
+                ? const Padding(
                     padding: EdgeInsets.only(top: 80),
-                    child: Center(
-                      child: CircularProgressIndicator(),
-                    ),
+                    child: Center(child: CircularProgressIndicator()),
                   )
-                else if (errorMessage != null)
-                  buildErrorState()
-                else ...[
-                  buildProfileHeader(),
-                  const SizedBox(height: 25),
-                  buildStatisticsGrid(),
-                  const SizedBox(height: 30),
-                  buildHistorySection(),
-                  const SizedBox(height: 30),
-                  buildSettingsSection(),
-                ],
-              ],
-            ),
+                : errorMessage != null
+                    ? buildErrorState()
+                    : Column(
+                        children: [
+                          buildProfileHeader(),
+                          const SizedBox(height: 20),
+                          buildStatisticsGrid(),
+                          const SizedBox(height: 24),
+                          buildSettingsSection(),
+                        ],
+                      ),
           ),
         ),
       ),
@@ -219,9 +415,11 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget buildProfileHeader() {
+    final imageBytes = profileImageBytes;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: AppColors.primary,
         borderRadius: BorderRadius.circular(24),
@@ -229,18 +427,21 @@ class _ProfilePageState extends State<ProfilePage> {
       child: Column(
         children: [
           CircleAvatar(
-            radius: 42,
+            radius: 44,
             backgroundColor: Colors.white,
-            child: Text(
-              initials,
-              style: TextStyle(
-                color: AppColors.primary,
-                fontWeight: FontWeight.bold,
-                fontSize: 28,
-              ),
-            ),
+            backgroundImage: imageBytes == null ? null : MemoryImage(imageBytes),
+            child: imageBytes == null
+                ? Text(
+                    initials,
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 28,
+                    ),
+                  )
+                : null,
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           Text(
             userName,
             style: const TextStyle(
@@ -252,25 +453,17 @@ class _ProfilePageState extends State<ProfilePage> {
           const SizedBox(height: 4),
           Text(
             userEmail,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 14,
-            ),
+            style: const TextStyle(color: Colors.white70, fontSize: 14),
           ),
           const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .16),
-              borderRadius: BorderRadius.circular(30),
+          OutlinedButton.icon(
+            onPressed: openEditProfileSheet,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              side: const BorderSide(color: Colors.white70),
             ),
-            child: const Text(
-              'Minha Biblioteca Bookly',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            icon: const Icon(Icons.edit_outlined),
+            label: const Text('Editar perfil'),
           ),
         ],
       ),
@@ -282,7 +475,7 @@ class _ProfilePageState extends State<ProfilePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         buildSectionTitle('Resumo'),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
         Row(
           children: [
             Expanded(
@@ -293,7 +486,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 color: AppColors.primary,
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: _ProfileStatCard(
                 title: 'Pendentes',
@@ -304,7 +497,7 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         Row(
           children: [
             Expanded(
@@ -315,7 +508,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 color: Colors.red,
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: _ProfileStatCard(
                 title: 'Devolvidos',
@@ -330,73 +523,24 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget buildHistorySection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        buildSectionTitle('Histórico recente'),
-        const SizedBox(height: 14),
-        if (recentLoans.isEmpty)
-          const _EmptyCard(
-            icon: Icons.history,
-            title: 'Nenhum empréstimo ainda',
-            description:
-                'Quando você cadastrar empréstimos, o histórico aparecerá aqui.',
-          )
-        else
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: recentLoans.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              final loan = recentLoans[index];
-
-              final friend = loan['friend'] as Map<String, dynamic>?;
-              final book = loan['book'] as Map<String, dynamic>?;
-
-              final friendName = friend?['name']?.toString() ?? 'Sem amigo';
-              final bookTitle = book?['title']?.toString() ?? 'Sem livro';
-              final dueDate = formatDate(loan['dueDate']?.toString());
-              final status = getVisualStatus(loan);
-
-              return _HistoryCard(
-                friendName: friendName,
-                bookTitle: bookTitle,
-                dueDate: dueDate,
-                status: getStatusText(status),
-                statusColor: getStatusColor(status),
-              );
-            },
-          ),
-      ],
-    );
-  }
-
   Widget buildSettingsSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        buildSectionTitle('Configurações'),
-        const SizedBox(height: 14),
+        buildSectionTitle('Configurações locais'),
+        const SizedBox(height: 12),
         _SettingsTile(
           icon: Icons.refresh,
           title: 'Atualizar dados',
-          subtitle: 'Buscar informações mais recentes do banco local',
+          subtitle: 'Recarregar as informações salvas no dispositivo',
           onTap: loadProfileData,
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         _SettingsTile(
           icon: Icons.person_outline,
-          title: 'Login e cadastro',
-          subtitle: 'Será implementado em uma próxima etapa',
-          onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Login e cadastro serão feitos depois.'),
-              ),
-            );
-          },
+          title: 'Editar perfil local',
+          subtitle: 'Alterar foto, nome e e-mail do usuário',
+          onTap: openEditProfileSheet,
         ),
       ],
     );
@@ -422,9 +566,9 @@ class _ProfilePageState extends State<ProfilePage> {
       child: _EmptyCard(
         icon: Icons.error_outline,
         title: 'Erro ao carregar perfil',
-       description:
-    'Erro ao carregar os dados locais.\nTente fechar e abrir o aplicativo novamente.\n\n$errorMessage',
-    ),
+        description:
+            'Erro ao carregar os dados locais.\nTente fechar e abrir o aplicativo novamente.\n\n$errorMessage',
+      ),
     );
   }
 }
@@ -445,113 +589,34 @@ class _ProfileStatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-  height: 135,
-  padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
+      height: 125,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            icon,
-            color: color,
-            size: 28,
-          ),
+          Icon(icon, color: color, size: 26),
           const Spacer(),
           Text(
             value,
             style: TextStyle(
               color: color,
               fontWeight: FontWeight.bold,
-              fontSize: 28,
+              fontSize: 27,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 3),
           Text(
-  title,
-  maxLines: 1,
-  overflow: TextOverflow.ellipsis,
-  style: TextStyle(
-    color: Colors.grey[700],
-    fontWeight: FontWeight.w600,
-    fontSize: 13,
-  ),
-),
-        ],
-      ),
-    );
-  }
-}
-
-class _HistoryCard extends StatelessWidget {
-  final String friendName;
-  final String bookTitle;
-  final String dueDate;
-  final String status;
-  final Color statusColor;
-
-  const _HistoryCard({
-    required this.friendName,
-    required this.bookTitle,
-    required this.dueDate,
-    required this.status,
-    required this.statusColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            backgroundColor: AppColors.secondary,
-            child: Text(
-              friendName.isNotEmpty ? friendName[0].toUpperCase() : '?',
-              style: const TextStyle(color: Colors.white),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  friendName,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(bookTitle),
-                Text(
-                  'Prazo: $dueDate',
-                  style: TextStyle(
-                    color: Colors.grey[700],
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: .15),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              status,
-              style: TextStyle(
-                color: statusColor,
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
-              ),
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.grey[700],
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
             ),
           ),
         ],
@@ -587,11 +652,8 @@ class _SettingsTile extends StatelessWidget {
         child: Row(
           children: [
             CircleAvatar(
-              backgroundColor: AppColors.primary.withValues(alpha: .12),
-              child: Icon(
-                icon,
-                color: AppColors.primary,
-              ),
+              backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+              child: Icon(icon, color: AppColors.primary),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -600,17 +662,12 @@ class _SettingsTile extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 3),
                   Text(
                     subtitle,
-                    style: TextStyle(
-                      color: Colors.grey[700],
-                      fontSize: 13,
-                    ),
+                    style: TextStyle(color: Colors.grey[700], fontSize: 13),
                   ),
                 ],
               ),
@@ -645,11 +702,7 @@ class _EmptyCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Icon(
-            icon,
-            size: 44,
-            color: AppColors.primary,
-          ),
+          Icon(icon, size: 44, color: AppColors.primary),
           const SizedBox(height: 12),
           Text(
             title,
@@ -664,9 +717,7 @@ class _EmptyCard extends StatelessWidget {
           Text(
             description,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.grey[700],
-            ),
+            style: TextStyle(color: Colors.grey[700]),
           ),
         ],
       ),
