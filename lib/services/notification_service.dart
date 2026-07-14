@@ -1,89 +1,110 @@
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:timezone/data/latest.dart' as tz;
-import 'package:timezone/timezone.dart' as tz;
+import 'loans_service.dart';
+import 'session_service.dart';
 
 class NotificationService {
-  static final _plugin = FlutterLocalNotificationsPlugin();
+  static Future<List<Map<String, dynamic>>> listReminders() async {
+    final userId = await SessionService.getCurrentUserId();
 
-  static const _details = NotificationDetails(
-    android: AndroidNotificationDetails(
-      'loan_reminders',
-      'Lembretes de empréstimos',
-      channelDescription: 'Avisos sobre devolução de livros',
-      importance: Importance.high,
-      priority: Priority.high,
-    ),
-  );
+    // Busca todos os empréstimos do usuário local.
+    final loans = await LoansService.listLoans(userId: userId);
 
-  static Future<void> initialize() async {
-    tz.initializeTimeZones();
-    tz.setLocalLocation(tz.getLocation('America/Sao_Paulo'));
+    final reminders = <Map<String, dynamic>>[];
 
-    const settings = InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-    );
+    for (final loan in loans) {
+      final book = loan['book'] as Map<String, dynamic>?;
+      final friend = loan['friend'] as Map<String, dynamic>?;
 
-    await _plugin.initialize(settings: settings);
+      final bookTitle = book?['title']?.toString() ?? 'Livro sem título';
+      final friendName = friend?['name']?.toString() ?? 'amigo não informado';
+      final status = loan['status']?.toString() ?? 'PENDING';
+      final dueDate = DateTime.tryParse(loan['dueDate']?.toString() ?? '');
 
-    await _plugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.requestNotificationsPermission();
-  }
+      if (status == 'RETURNED') {
+        reminders.add({
+          'type': 'AVAILABLE',
+          'title': 'Livro disponível novamente',
+          'message': 'O livro “$bookTitle” já foi devolvido e pode ser emprestado novamente.',
+          'icon': 'available',
+          'createdAt': loan['returnedDate'] ?? loan['updatedAt'] ?? loan['createdAt'],
+        });
 
-  static Future<void> scheduleLoanReminders({
-    required int loanId,
-    required String bookTitle,
-    required DateTime dueDate,
-  }) async {
-    final dueAt = tz.TZDateTime(
-      tz.local,
-      dueDate.year,
-      dueDate.month,
-      dueDate.day,
-      9,
-    );
+        continue;
+      }
 
-    final oneDayBefore = dueAt.subtract(const Duration(days: 1));
+      if (dueDate == null) {
+        continue;
+      }
 
-    if (oneDayBefore.isAfter(tz.TZDateTime.now(tz.local))) {
-      await _schedule(
-        id: loanId * 10,
-        scheduledAt: oneDayBefore,
-        title: 'Devolução amanhã',
-        body: 'O livro “$bookTitle” deve ser devolvido amanhã.',
-      );
+      final today = DateTime.now();
+      final todayOnly = DateTime(today.year, today.month, today.day);
+      final dueOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
+      final days = dueOnly.difference(todayOnly).inDays;
+
+      if (days < 0) {
+        reminders.add({
+          'type': 'LATE',
+          'title': 'Prazo vencido',
+          'message': 'O livro “$bookTitle”, emprestado para $friendName, está atrasado há ${days.abs()} dia(s).',
+          'icon': 'late',
+          'createdAt': loan['dueDate'],
+        });
+      } else if (days == 0) {
+        reminders.add({
+          'type': 'TODAY',
+          'title': 'Devolução hoje',
+          'message': 'O livro “$bookTitle”, emprestado para $friendName, vence hoje.',
+          'icon': 'today',
+          'createdAt': loan['dueDate'],
+        });
+      } else if (days <= 2) {
+        reminders.add({
+          'type': 'SOON',
+          'title': 'Prazo próximo',
+          'message': 'O livro “$bookTitle”, emprestado para $friendName, vence em $days dia(s).',
+          'icon': 'soon',
+          'createdAt': loan['dueDate'],
+        });
+      }
     }
 
-    if (dueAt.isAfter(tz.TZDateTime.now(tz.local))) {
-      await _schedule(
-        id: loanId * 10 + 1,
-        scheduledAt: dueAt,
-        title: 'Prazo de devolução',
-        body: 'Hoje é o prazo para devolver “$bookTitle”.',
-      );
+    // Ordena deixando atrasados e vencimentos próximos mais acima.
+    reminders.sort((a, b) {
+      final priorityA = getPriority(a['type']?.toString());
+      final priorityB = getPriority(b['type']?.toString());
+
+      if (priorityA != priorityB) {
+        return priorityA.compareTo(priorityB);
+      }
+
+      final dateA = DateTime.tryParse(a['createdAt']?.toString() ?? '');
+      final dateB = DateTime.tryParse(b['createdAt']?.toString() ?? '');
+
+      if (dateA == null && dateB == null) return 0;
+      if (dateA == null) return 1;
+      if (dateB == null) return -1;
+
+      return dateB.compareTo(dateA);
+    });
+
+    return reminders;
+  }
+
+  static int getPriority(String? type) {
+    switch (type) {
+      case 'LATE':
+        return 0;
+      case 'TODAY':
+        return 1;
+      case 'SOON':
+        return 2;
+      case 'AVAILABLE':
+        return 3;
+      default:
+        return 4;
     }
   }
 
-  static Future<void> _schedule({
-    required int id,
-    required tz.TZDateTime scheduledAt,
-    required String title,
-    required String body,
-  }) {
-    return _plugin.zonedSchedule(
-      id: id,
-      title: title,
-      body: body,
-      scheduledDate: scheduledAt,
-      notificationDetails: _details,
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-    );
-  }
-
-  static Future<void> cancelLoanReminders(int loanId) async {
-    await _plugin.cancel(id: loanId * 10);
-    await _plugin.cancel(id: loanId * 10 + 1);
+  static int getUnreadCount(List<Map<String, dynamic>> reminders) {
+    return reminders.length;
   }
 }

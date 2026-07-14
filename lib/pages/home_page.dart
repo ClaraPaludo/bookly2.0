@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import 'notifications_page.dart';
 import '../core/app_colors.dart';
 import '../pages/add_book_page.dart';
 import '../pages/book_page.dart';
@@ -233,7 +234,7 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 5),
             Text(
-              'Bem-vindo(a) de volta',
+              'A melhor forma de organizar seus livros',
               style: TextStyle(color: Colors.grey[700], fontSize: 15),
             ),
           ],
@@ -244,12 +245,17 @@ class _HomePageState extends State<HomePage> {
     borderRadius: BorderRadius.circular(14),
   ),
   child: IconButton(
-    // Por enquanto ele ainda atualiza a Home.
-    // Depois podemos trocar essa ação para abrir a tela de notificações.
-    onPressed: loadHomeData,
-    icon: const Icon(Icons.notifications_none_outlined),
-    tooltip: 'Notificações',
-  ),
+  onPressed: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const NotificationsPage(),
+      ),
+    );
+  },
+  icon: const Icon(Icons.notifications_none_outlined),
+  tooltip: 'Lembretes',
+),
 ),
       ],
     );
