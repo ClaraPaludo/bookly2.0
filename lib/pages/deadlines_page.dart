@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../core/app_colors.dart';
+import '../pages/loan_detail_page.dart';
+import '../pages/new_loan_page.dart';
 import '../services/loans_service.dart';
 import '../services/session_service.dart';
 import '../widgets/app_bottom_navigation.dart';
-import '../pages/loan_detail_page.dart';
 
 class DeadlinesPage extends StatefulWidget {
   const DeadlinesPage({super.key});
@@ -19,7 +20,6 @@ class _DeadlinesPageState extends State<DeadlinesPage> {
   String? errorMessage;
 
   String selectedFilter = 'ALL';
-
   List<Map<String, dynamic>> loans = [];
 
   @override
@@ -37,9 +37,10 @@ class _DeadlinesPageState extends State<DeadlinesPage> {
     try {
       final userId = await SessionService.getCurrentUserId();
 
-      final loadedLoans = await LoansService.listLoans(
-        userId: userId,
-      );
+      // Atualiza atrasos antes de montar a lista.
+      await LoansService.refreshLoanStatuses(userId: userId);
+
+      final loadedLoans = await LoansService.listLoans(userId: userId);
 
       if (!mounted) return;
 
@@ -57,6 +58,70 @@ class _DeadlinesPageState extends State<DeadlinesPage> {
     }
   }
 
+  Future<void> openNewLoanPage() async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const NewLoanPage()),
+    );
+
+    // Se cadastrou empréstimo novo, recarrega os prazos.
+    if (result == true) {
+      await loadLoans();
+    }
+  }
+
+  Future<void> openLoanDetail(String loanId) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LoanDetailPage(loanId: loanId),
+      ),
+    );
+
+    // Se editou/devolveu algo no detalhe, recarrega a página.
+    if (result == true) {
+      await loadLoans();
+    }
+  }
+
+  Future<void> askBeforeReturn(String loanId) async {
+    final option = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Devolver livro'),
+          content: const Text(
+            'Deseja adicionar uma foto de como o livro voltou antes de marcar como devolvido?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'cancel'),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'without_photo'),
+              child: const Text('Marcar sem foto'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pop(context, 'with_photo'),
+              icon: const Icon(Icons.photo_camera_outlined),
+              label: const Text('Adicionar foto'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (option == 'with_photo') {
+      await openLoanDetail(loanId);
+      return;
+    }
+
+    if (option == 'without_photo') {
+      await markAsReturned(loanId);
+    }
+  }
+
   Future<void> markAsReturned(String loanId) async {
     setState(() {
       isUpdating = true;
@@ -68,9 +133,7 @@ class _DeadlinesPageState extends State<DeadlinesPage> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Empréstimo marcado como devolvido!'),
-        ),
+        const SnackBar(content: Text('Empréstimo marcado como devolvido!')),
       );
 
       await loadLoans();
@@ -106,13 +169,10 @@ class _DeadlinesPageState extends State<DeadlinesPage> {
       return dateA.compareTo(dateB);
     });
 
-    if (selectedFilter == 'ALL') {
-      return sortedLoans;
-    }
+    if (selectedFilter == 'ALL') return sortedLoans;
 
     return sortedLoans.where((loan) {
-      final visualStatus = getVisualStatus(loan);
-      return visualStatus == selectedFilter;
+      return getVisualStatus(loan) == selectedFilter;
     }).toList();
   }
 
@@ -131,25 +191,17 @@ class _DeadlinesPageState extends State<DeadlinesPage> {
   String getVisualStatus(Map<String, dynamic> loan) {
     final status = loan['status']?.toString() ?? 'PENDING';
 
-    if (status == 'RETURNED') {
-      return 'RETURNED';
-    }
+    if (status == 'RETURNED') return 'RETURNED';
 
     final dueDate = DateTime.tryParse(loan['dueDate']?.toString() ?? '');
 
-    if (dueDate == null) {
-      return status;
-    }
+    if (dueDate == null) return status;
 
     final today = DateTime.now();
     final todayOnly = DateTime(today.year, today.month, today.day);
     final dueOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
 
-    if (dueOnly.isBefore(todayOnly)) {
-      return 'LATE';
-    }
-
-    return 'PENDING';
+    return dueOnly.isBefore(todayOnly) ? 'LATE' : 'PENDING';
   }
 
   String getStatusText(String status) {
@@ -177,15 +229,9 @@ class _DeadlinesPageState extends State<DeadlinesPage> {
   }
 
   String formatDate(String? value) {
-    if (value == null || value.isEmpty) {
-      return 'Sem prazo';
-    }
+    final date = DateTime.tryParse(value ?? '');
 
-    final date = DateTime.tryParse(value);
-
-    if (date == null) {
-      return 'Sem prazo';
-    }
+    if (date == null) return 'Sem prazo';
 
     final day = date.day.toString().padLeft(2, '0');
     final month = date.month.toString().padLeft(2, '0');
@@ -197,9 +243,7 @@ class _DeadlinesPageState extends State<DeadlinesPage> {
   int daysUntilDue(String? value) {
     final date = DateTime.tryParse(value ?? '');
 
-    if (date == null) {
-      return 0;
-    }
+    if (date == null) return 0;
 
     final today = DateTime.now();
     final todayOnly = DateTime(today.year, today.month, today.day);
@@ -211,23 +255,13 @@ class _DeadlinesPageState extends State<DeadlinesPage> {
   String getDeadlineMessage(Map<String, dynamic> loan) {
     final status = getVisualStatus(loan);
 
-    if (status == 'RETURNED') {
-      return 'Livro já devolvido';
-    }
+    if (status == 'RETURNED') return 'Livro já devolvido';
 
     final days = daysUntilDue(loan['dueDate']?.toString());
 
-    if (days < 0) {
-      return 'Atrasado há ${days.abs()} dia(s)';
-    }
-
-    if (days == 0) {
-      return 'Devolve hoje';
-    }
-
-    if (days == 1) {
-      return 'Falta 1 dia';
-    }
+    if (days < 0) return 'Atrasado há ${days.abs()} dia(s)';
+    if (days == 0) return 'Devolve hoje';
+    if (days == 1) return 'Falta 1 dia';
 
     return 'Faltam $days dias';
   }
@@ -238,17 +272,24 @@ class _DeadlinesPageState extends State<DeadlinesPage> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: openNewLoanPage,
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add),
+        label: const Text('Empréstimo'),
+      ),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: loadLoans,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 buildHeader(),
-                const SizedBox(height: 25),
+                const SizedBox(height: 20),
                 if (isLoading)
                   const Center(
                     child: Padding(
@@ -260,10 +301,11 @@ class _DeadlinesPageState extends State<DeadlinesPage> {
                   buildErrorState()
                 else ...[
                   buildSummaryCards(),
-                  const SizedBox(height: 25),
+                  const SizedBox(height: 20),
                   buildFilters(),
-                  const SizedBox(height: 25),
+                  const SizedBox(height: 20),
                   buildLoansList(visibleLoans),
+                  const SizedBox(height: 70),
                 ],
               ],
             ),
@@ -278,27 +320,26 @@ class _DeadlinesPageState extends State<DeadlinesPage> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Prazos',
-              style: TextStyle(
-                fontSize: 30,
-                fontWeight: FontWeight.bold,
-                color: AppColors.primary,
-                letterSpacing: 0.5,
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Prazos',
+                style: TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                  letterSpacing: 0.5,
+                ),
               ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              'Acompanhe devoluções e atrasos',
-              style: TextStyle(
-                color: Colors.grey[700],
-                fontSize: 15,
+              const SizedBox(height: 5),
+              Text(
+                'Acompanhe devoluções e atrasos',
+                style: TextStyle(color: Colors.grey[700], fontSize: 15),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         Container(
           decoration: BoxDecoration(
@@ -308,6 +349,7 @@ class _DeadlinesPageState extends State<DeadlinesPage> {
           child: IconButton(
             onPressed: loadLoans,
             icon: const Icon(Icons.refresh),
+            tooltip: 'Atualizar',
           ),
         ),
       ],
@@ -355,41 +397,25 @@ class _DeadlinesPageState extends State<DeadlinesPage> {
           _FilterChipButton(
             label: 'Todos',
             isSelected: selectedFilter == 'ALL',
-            onTap: () {
-              setState(() {
-                selectedFilter = 'ALL';
-              });
-            },
+            onTap: () => setState(() => selectedFilter = 'ALL'),
           ),
           const SizedBox(width: 8),
           _FilterChipButton(
             label: 'Pendentes',
             isSelected: selectedFilter == 'PENDING',
-            onTap: () {
-              setState(() {
-                selectedFilter = 'PENDING';
-              });
-            },
+            onTap: () => setState(() => selectedFilter = 'PENDING'),
           ),
           const SizedBox(width: 8),
           _FilterChipButton(
             label: 'Atrasados',
             isSelected: selectedFilter == 'LATE',
-            onTap: () {
-              setState(() {
-                selectedFilter = 'LATE';
-              });
-            },
+            onTap: () => setState(() => selectedFilter = 'LATE'),
           ),
           const SizedBox(width: 8),
           _FilterChipButton(
             label: 'Devolvidos',
             isSelected: selectedFilter == 'RETURNED',
-            onTap: () {
-              setState(() {
-                selectedFilter = 'RETURNED';
-              });
-            },
+            onTap: () => setState(() => selectedFilter = 'RETURNED'),
           ),
         ],
       ),
@@ -417,7 +443,7 @@ class _DeadlinesPageState extends State<DeadlinesPage> {
             fontSize: 22,
           ),
         ),
-        const SizedBox(height: 15),
+        const SizedBox(height: 14),
         ListView.separated(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -435,35 +461,22 @@ class _DeadlinesPageState extends State<DeadlinesPage> {
             final status = getVisualStatus(loan);
 
             return InkWell(
-  borderRadius: BorderRadius.circular(18),
-  onTap: () async {
-    final result = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LoanDetailPage(
-          loanId: loan['id'].toString(),
-        ),
-      ),
-    );
-
-    if (result == true) {
-      await loadLoans();
-    }
-  },
-  child: _DeadlineCard(
-    friendName: friendName,
-    bookTitle: bookTitle,
-    dueDate: dueDate,
-    deadlineMessage: getDeadlineMessage(loan),
-    status: getStatusText(status),
-    statusColor: getStatusColor(status),
-    canMarkReturned: status != 'RETURNED',
-    isUpdating: isUpdating,
-    onMarkReturned: () {
-      markAsReturned(loan['id'].toString());
-    },
-  ),
-);
+              borderRadius: BorderRadius.circular(18),
+              onTap: () => openLoanDetail(loan['id'].toString()),
+              child: _DeadlineCard(
+                friendName: friendName,
+                bookTitle: bookTitle,
+                dueDate: dueDate,
+                deadlineMessage: getDeadlineMessage(loan),
+                status: getStatusText(status),
+                statusColor: getStatusColor(status),
+                canMarkReturned: status != 'RETURNED',
+                isUpdating: isUpdating,
+                onMarkReturned: () {
+                  askBeforeReturn(loan['id'].toString());
+                },
+              ),
+            );
           },
         ),
       ],
@@ -475,8 +488,8 @@ class _DeadlinesPageState extends State<DeadlinesPage> {
       icon: Icons.error_outline,
       title: 'Erro ao carregar prazos',
       description:
-    'Erro ao carregar os dados locais.\nTente fechar e abrir o aplicativo novamente.\n\n$errorMessage',
-     );
+          'Erro ao carregar os dados locais.\nTente fechar e abrir o aplicativo novamente.\n\n$errorMessage',
+    );
   }
 }
 
@@ -503,11 +516,7 @@ class _SummaryCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Icon(
-            icon,
-            color: color,
-            size: 26,
-          ),
+          Icon(icon, color: color, size: 26),
           const SizedBox(height: 8),
           Text(
             value,
@@ -612,18 +621,13 @@ class _DeadlineCard extends StatelessWidget {
                   children: [
                     Text(
                       friendName,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     Text(bookTitle),
                     const SizedBox(height: 3),
                     Text(
                       'Prazo: $dueDate',
-                      style: TextStyle(
-                        color: Colors.grey[700],
-                        fontSize: 13,
-                      ),
+                      style: TextStyle(color: Colors.grey[700], fontSize: 13),
                     ),
                   ],
                 ),
@@ -632,7 +636,7 @@ class _DeadlineCard extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: .15),
+                  color: statusColor.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
@@ -649,11 +653,7 @@ class _DeadlineCard extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              Icon(
-                Icons.info_outline,
-                size: 18,
-                color: statusColor,
-              ),
+              Icon(Icons.info_outline, size: 18, color: statusColor),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -700,11 +700,7 @@ class _EmptyCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Icon(
-            icon,
-            size: 44,
-            color: AppColors.primary,
-          ),
+          Icon(icon, size: 44, color: AppColors.primary),
           const SizedBox(height: 12),
           Text(
             title,
@@ -719,9 +715,7 @@ class _EmptyCard extends StatelessWidget {
           Text(
             description,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.grey[700],
-            ),
+            style: TextStyle(color: Colors.grey[700]),
           ),
         ],
       ),
