@@ -308,4 +308,48 @@ class LoansService {
 
     return loan;
   }
+    static Future<void> refreshLoanStatuses({String? userId}) async {
+    final db = await AppDatabase.database;
+
+    final where = userId == null
+        ? "status != 'RETURNED'"
+        : "userId = ? AND status != 'RETURNED'";
+
+    final whereArgs = userId == null ? null : [int.parse(userId)];
+
+    final loans = await db.query(
+      'loans',
+      where: where,
+      whereArgs: whereArgs,
+    );
+
+    final now = DateTime.now();
+
+    for (final item in loans) {
+      final loan = Map<String, dynamic>.from(item);
+      final dueDate = DateTime.tryParse(loan['dueDate']?.toString() ?? '');
+
+      if (dueDate == null) {
+        continue;
+      }
+
+      final today = DateTime.now();
+      final todayOnly = DateTime(today.year, today.month, today.day);
+      final dueOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
+
+      final newStatus = dueOnly.isBefore(todayOnly) ? 'LATE' : 'PENDING';
+
+      if (newStatus != loan['status']) {
+        await db.update(
+          'loans',
+          {
+            'status': newStatus,
+            'updatedAt': now.toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [loan['id']],
+        );
+      }
+    }
+  }
 }

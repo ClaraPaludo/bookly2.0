@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../core/app_colors.dart';
@@ -19,8 +22,15 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final TextEditingController searchController = TextEditingController();
-  String search = '';
 
+  String search = '';
+  bool isLoading = true;
+  String? errorMessage;
+
+  List<Map<String, dynamic>> books = [];
+  List<Map<String, dynamic>> loans = [];
+
+  // Lista filtrada conforme o texto digitado no campo de busca.
   List<Map<String, dynamic>> get filteredBooks {
     final query = search.trim().toLowerCase();
 
@@ -37,15 +47,11 @@ class _HomePageState extends State<HomePage> {
     }).toList();
   }
 
-  bool isLoading = true;
-  String? errorMessage;
-
-  List<Map<String, dynamic>> books = [];
-  List<Map<String, dynamic>> loans = [];
-
   @override
   void initState() {
     super.initState();
+
+    // Carrega os dados da tela assim que a Home abre.
     loadHomeData();
   }
 
@@ -64,6 +70,7 @@ class _HomePageState extends State<HomePage> {
     try {
       final userId = await SessionService.getCurrentUserId();
 
+      // Busca os dados direto do SQLite através dos services.
       final loadedBooks = await BooksService.listBooks(userId: userId);
       final loadedLoans = await LoansService.listLoans(userId: userId);
 
@@ -90,6 +97,7 @@ class _HomePageState extends State<HomePage> {
       MaterialPageRoute(builder: (_) => const AddBookPage()),
     );
 
+    // Se cadastrou livro novo, recarrega a Home.
     if (result == true) {
       await loadHomeData();
     }
@@ -127,11 +135,14 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  String getBookCover(Map<String, dynamic> book) {
+  // Pega a capa salva no banco.
+  // Se não tiver capa, retorna null.
+  // Isso evita aquela imagem preta/padrão aparecendo quando o usuário não cadastrou foto.
+  String? getBookCover(Map<String, dynamic> book) {
     final coverUrl = book['coverUrl']?.toString();
 
     if (coverUrl == null || coverUrl.trim().isEmpty) {
-      return 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?q=80&w=500';
+      return null;
     }
 
     return coverUrl;
@@ -385,7 +396,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget buildBooksSection() {
+    // Aqui pegamos a lista já filtrada pela busca da Home.
     final visibleBooks = filteredBooks;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -398,6 +411,9 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         const SizedBox(height: 15),
+
+        // Se não tiver nenhum livro cadastrado ou nenhum resultado na busca,
+        // mostramos um card vazio explicando o que fazer.
         if (visibleBooks.isEmpty)
           _EmptyCard(
             icon: Icons.search_off,
@@ -410,26 +426,35 @@ class _HomePageState extends State<HomePage> {
           )
         else
           SizedBox(
-            height: 210,
+            // Aumentei a altura porque agora o nome do livro aparece embaixo da capa.
+            height: 230,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: visibleBooks.length,
               separatorBuilder: (_, __) => const SizedBox(width: 12),
+
+              // Cada item da lista horizontal vira um BookCover.
               itemBuilder: (context, index) {
                 final book = visibleBooks[index];
 
                 return BookCover(
                   bookId: book['id'].toString(),
+
+                  // Se tiver imagem salva no banco, usa a imagem.
+                  // Se não tiver, o BookCover mostra um ícone de adicionar capa.
                   image: getBookCover(book),
+
                   title: book['title']?.toString() ?? 'Sem título',
                   author: book['author']?.toString() ?? 'Autor não informado',
                   year: '2026',
                   category: book['category']?.toString() ?? 'Sem categoria',
-                  status: book['available'] == true
-                      ? 'Disponível'
-                      : 'Emprestado',
+                  status:
+                      book['available'] == true ? 'Disponível' : 'Emprestado',
                   description:
                       book['description']?.toString() ?? 'Sem descrição.',
+
+                  // Quando editar/excluir algo nos detalhes do livro,
+                  // a Home recarrega automaticamente.
                   onBookChanged: loadHomeData,
                 );
               },
@@ -498,7 +523,7 @@ class _LoanCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: .15),
+              color: statusColor.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
@@ -595,7 +620,10 @@ class _EmptyCard extends StatelessWidget {
 }
 
 class BookCover extends StatelessWidget {
-  final String image;
+  // Agora image pode ser null.
+  // Isso permite mostrar um visual mais bonito quando o livro não tem capa.
+  final String? image;
+
   final String title;
   final String author;
   final String year;
@@ -620,40 +648,157 @@ class BookCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasImage = image != null && image!.trim().isNotEmpty;
+
     return GestureDetector(
       onTap: () async {
+        // Quando clicar no livro, abre a página de detalhes.
         final result = await Navigator.push<bool>(
           context,
           MaterialPageRoute(builder: (_) => BookDetailPage(bookId: bookId)),
         );
 
+        // Se a página de detalhes alterou algo, recarrega a Home.
         if (result == true) {
           await onBookChanged?.call();
         }
       },
-      child: Container(
-        width: 125,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: Image.network(
-            image,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) {
-              return Container(
+      child: SizedBox(
+        width: 135,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Parte visual da capa.
+            // Se tiver imagem, mostra a imagem.
+            // Se não tiver imagem, mostra um card com ícone e texto.
+            Container(
+              height: 165,
+              width: 135,
+              decoration: BoxDecoration(
                 color: Colors.white,
-                child: Icon(
-                  Icons.menu_book_outlined,
-                  color: AppColors.primary,
-                  size: 42,
-                ),
-              );
-            },
-          ),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.grey.shade200, width: 1),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: hasImage
+                    ? _BookCoverImage(image: image!)
+                    : const _BookCoverPlaceholder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // Nome do livro embaixo da capa.
+            Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: AppColors.primary,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 2),
+
+            // Autor embaixo do nome.
+            Text(
+              author,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: Colors.grey[700], fontSize: 12),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+class _BookCoverImage extends StatelessWidget {
+  final String image;
+
+  const _BookCoverImage({
+    required this.image,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Quando a imagem foi salva pelo image_picker, ela fica no banco como:
+    // data:image/png;base64,....
+    // Então aqui precisamos transformar esse texto em bytes para mostrar com Image.memory.
+    if (image.startsWith('data:image')) {
+      final bytes = _decodeBase64Image(image);
+
+      if (bytes == null) {
+        return const _BookCoverPlaceholder();
+      }
+
+      return Image.memory(
+        bytes,
+        fit: BoxFit.cover,
+      );
+    }
+
+    // Se algum dia o app usar uma imagem por URL normal, continua funcionando.
+    return Image.network(
+      image,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) {
+        return const _BookCoverPlaceholder();
+      },
+    );
+  }
+
+  Uint8List? _decodeBase64Image(String value) {
+    try {
+      // Remove o começo "data:image/png;base64,"
+      // e deixa somente o conteúdo base64 da imagem.
+      final base64Text = value.contains(',') ? value.split(',').last : value;
+
+      return base64Decode(base64Text);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+// Widget separado só para o caso de o livro não ter capa.
+// Assim evitamos aquele livro preto e deixamos claro que pode adicionar uma imagem.
+class _BookCoverPlaceholder extends StatelessWidget {
+  const _BookCoverPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.add_photo_alternate_outlined,
+            color: AppColors.primary,
+            size: 38,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Adicionar\ncapa',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.primary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+
 
 import '../core/app_theme.dart';
 import '../services/books_service.dart';
@@ -27,6 +30,7 @@ class _AddBookPageState extends State<AddBookPage> {
   final ImagePicker _picker = ImagePicker();
 
   File? _selectedImage;
+  Uint8List? _selectedImageBytes;
 
   String? _selectedCategory;
 
@@ -66,44 +70,19 @@ class _AddBookPageState extends State<AddBookPage> {
       imageQuality: 85,
     );
 
-    if (image != null) {
-      setState(() {
-        _selectedImage = File(image.path);
-      });
+    if (image == null) {
+      return;
     }
-  }
 
-  Future<void> _showImageOptions() async {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Wrap(
-            children: [
-              ListTile(
-                leading: const Icon(Icons.camera_alt),
-                title: const Text('Tirar foto'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickImage(ImageSource.camera);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_library),
-                title: const Text('Escolher da galeria'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickImage(ImageSource.gallery);
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
+    final bytes = await image.readAsBytes();
+
+    setState(() {
+      _selectedImageBytes = bytes;
+
+      if (!kIsWeb) {
+        _selectedImage = File(image.path);
+      }
+    });
   }
 
   Future<void> _saveBook() async {
@@ -129,7 +108,9 @@ class _AddBookPageState extends State<AddBookPage> {
         description: _descriptionController.text.trim().isEmpty
             ? null
             : _descriptionController.text.trim(),
-        coverUrl: null,
+        coverUrl: _selectedImageBytes == null
+    ? null
+    : 'data:image/png;base64,${base64Encode(_selectedImageBytes!)}',
       );
 
       if (!mounted) return;
@@ -175,6 +156,100 @@ class _AddBookPageState extends State<AddBookPage> {
     );
   }
 
+  Widget _buildSelectedImage() {
+  final title = _titleController.text.trim();
+
+  if (_selectedImageBytes != null) {
+    return Column(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Image.memory(
+            _selectedImageBytes!,
+            height: 190,
+            width: double.infinity,
+            fit: BoxFit.cover,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          title.isEmpty ? 'Capa do livro' : title,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+      ],
+    );
+  }
+
+  if (!kIsWeb && _selectedImage != null) {
+    return Column(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Image.file(
+            _selectedImage!,
+            height: 190,
+            width: double.infinity,
+            fit: BoxFit.cover,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          title.isEmpty ? 'Capa do livro' : title,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+      ],
+    );
+  }
+
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(
+        color: Colors.grey.shade300,
+        width: 1.5,
+      ),
+    ),
+    child: Column(
+      children: [
+        Icon(
+          Icons.add_photo_alternate_outlined,
+          size: 44,
+          color: AppTheme.primary,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Adicionar capa do livro',
+          style: TextStyle(
+            color: AppTheme.primary,
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Escolha uma imagem da galeria ou tire uma foto.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: 13,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -192,11 +267,14 @@ class _AddBookPageState extends State<AddBookPage> {
           child: Column(
             children: [
               TextFormField(
-                controller: _titleController,
-                decoration: _decoration(
-                  'Título do livro',
-                  Icons.menu_book_outlined,
-                ),
+  controller: _titleController,
+  onChanged: (_) {
+    setState(() {});
+  },
+  decoration: _decoration(
+    'Título do livro',
+    Icons.menu_book_outlined,
+  ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
                     return 'Informe o título do livro.';
@@ -224,7 +302,7 @@ class _AddBookPageState extends State<AddBookPage> {
               ),
               const SizedBox(height: 14),
               DropdownButtonFormField<String>(
-                value: _selectedCategory,
+                initialValue: _selectedCategory,
                 decoration: _decoration('Categoria', Icons.category_outlined),
                 items: _categories.map((categoria) {
                   return DropdownMenuItem(
@@ -241,22 +319,15 @@ class _AddBookPageState extends State<AddBookPage> {
               const SizedBox(height: 14),
               Column(
                 children: [
-                  if (_selectedImage != null)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.file(
-                        _selectedImage!,
-                        height: 180,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
+                  _buildSelectedImage(),
 
-                  const SizedBox(height: 12),
+                  if (_selectedImageBytes != null || _selectedImage != null)
+                    const SizedBox(height: 12),
 
                   ElevatedButton.icon(
                     onPressed: () => _pickImage(ImageSource.gallery),
                     icon: const Icon(Icons.photo),
-                    label: const Text("Escolher da galeria"),
+                    label: const Text('Escolher da galeria'),
                   ),
 
                   const SizedBox(height: 12),
@@ -264,7 +335,7 @@ class _AddBookPageState extends State<AddBookPage> {
                   ElevatedButton.icon(
                     onPressed: () => _pickImage(ImageSource.camera),
                     icon: const Icon(Icons.camera_alt),
-                    label: const Text("Tirar foto"),
+                    label: const Text('Tirar foto'),
                   ),
                 ],
               ),

@@ -5,7 +5,6 @@ import '../services/books_service.dart';
 import '../services/friends_services.dart';
 import '../services/loans_service.dart';
 import '../services/session_service.dart';
-import '../services/notification_service.dart';
 
 class NewLoanPage extends StatefulWidget {
   const NewLoanPage({super.key});
@@ -36,10 +35,13 @@ class _NewLoanPageState extends State<NewLoanPage> {
     setState(() {
       isLoading = true;
       errorMessage = null;
+      selectedBook = null;
     });
 
     try {
       final userId = await SessionService.getCurrentUserId();
+
+      await LoansService.refreshLoanStatuses(userId: userId);
 
       final loadedFriends = await FriendsService.listFriends(userId: userId);
       final loadedBooks = await BooksService.listBooks(
@@ -82,6 +84,8 @@ class _NewLoanPageState extends State<NewLoanPage> {
   }
 
   Future<void> saveLoan() async {
+    if (isSaving) return;
+
     if (selectedFriend == null) {
       showMessage('Selecione um amigo.');
       return;
@@ -104,18 +108,25 @@ class _NewLoanPageState extends State<NewLoanPage> {
     try {
       final userId = await SessionService.getCurrentUserId();
 
-      final loan = await LoansService.createLoan(
+      final currentBook = await BooksService.getBookById(
+        selectedBook!['id'].toString(),
+      );
+
+      if (currentBook == null) {
+        throw Exception('Livro não encontrado.');
+      }
+
+      if (currentBook['available'] != true) {
+        await loadData();
+        throw Exception('Este livro já está emprestado.');
+      }
+
+      await LoansService.createLoan(
         userId: userId,
         friendId: selectedFriend!['id'].toString(),
         bookId: selectedBook!['id'].toString(),
         dueDate: selectedDueDate!,
         loanDate: DateTime.now(),
-      );
-
-      await NotificationService.scheduleLoanReminders(
-        loanId: loan['id'] as int,
-        bookTitle: selectedBook!['title']?.toString() ?? 'seu livro',
-        dueDate: selectedDueDate!,
       );
 
       if (!mounted) return;
@@ -134,6 +145,8 @@ class _NewLoanPageState extends State<NewLoanPage> {
           backgroundColor: Colors.red,
         ),
       );
+
+      await loadData();
     } finally {
       if (mounted) {
         setState(() {
@@ -378,39 +391,80 @@ class _NewLoanPageState extends State<NewLoanPage> {
     );
   }
 
-  Widget buildDateCard() {
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: pickDueDate,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selectedDueDate == null
-                ? Colors.transparent
-                : AppColors.primary,
-            width: 2,
+   Widget buildDateCard() {
+  final hasDate = selectedDueDate != null;
+
+  return InkWell(
+    borderRadius: BorderRadius.circular(20),
+    onTap: pickDueDate,
+    child: Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: hasDate ? AppColors.primary.withOpacity(0.08) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: hasDate ? AppColors.primary : AppColors.primary.withOpacity(0.35),
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.calendar_month_outlined, color: AppColors.primary),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                formatDate(selectedDueDate),
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-            const Icon(Icons.chevron_right),
-          ],
-        ),
+        ],
       ),
-    );
-  }
+      child: Row(
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.event_available,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  hasDate ? 'Prazo selecionado' : 'Escolher prazo de devolução',
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  formatDate(selectedDueDate),
+                  style: TextStyle(
+                    color: hasDate ? Colors.black87 : Colors.grey[700],
+                    fontSize: 14,
+                    fontWeight: hasDate ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right,
+            color: AppColors.primary,
+            size: 30,
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
   Widget buildSaveButton() {
     return SizedBox(
