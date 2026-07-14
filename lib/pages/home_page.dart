@@ -233,21 +233,24 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 5),
             Text(
-              'Bem-vinda de volta 📚',
+              'Bem-vindo(a) de volta',
               style: TextStyle(color: Colors.grey[700], fontSize: 15),
             ),
           ],
         ),
         Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: IconButton(
-            onPressed: loadHomeData,
-            icon: const Icon(Icons.refresh),
-          ),
-        ),
+  decoration: BoxDecoration(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(14),
+  ),
+  child: IconButton(
+    // Por enquanto ele ainda atualiza a Home.
+    // Depois podemos trocar essa ação para abrir a tela de notificações.
+    onPressed: loadHomeData,
+    icon: const Icon(Icons.notifications_none_outlined),
+    tooltip: 'Notificações',
+  ),
+),
       ],
     );
   }
