@@ -41,8 +41,10 @@ class AppTheme {
 
     scaffoldBackgroundColor: background,
 
+    // Gera automaticamente uma paleta de cores baseada na cor principal.
     colorScheme: ColorScheme.fromSeed(seedColor: primary),
 
+    // Personaliza todas as AppBars do aplicativo.
     appBarTheme: const AppBarTheme(
       backgroundColor: primary,
       foregroundColor: Colors.white,
