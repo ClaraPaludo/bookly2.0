@@ -6,29 +6,34 @@ class AppDatabase {
   // Esse arquivo fica salvo no dispositivo/navegador do usuário.
   static const String databaseName = 'bookly.db';
 
-  // Sempre que alteramos a estrutura das tabelas,
-  // aumentamos a versão do banco.
-  //
-  // Antes estava versão 2.
-  // Agora colocamos versão 3 porque adicionamos:
-  // beforePhotoUrl e afterPhotoUrl na tabela loans.
+  // Versão atual do banco de dados.
+  // Sempre que a estrutura das tabelas muda,
+  // aumentamos esse número.
   static const int databaseVersion = 4;
 
+  // Guarda uma única instância do banco.
+  // O ? significa que ela pode começar como null.
   static Database? _database;
 
-  // Getter principal usado pelos services.
-  // Ele evita abrir o banco várias vezes.
+  // Getter responsável por fornecer o banco para o restante do aplicativo.
   static Future<Database> get database async {
+    // Se o banco já estiver aberto,
+    // apenas retorna a instância existente.
     if (_database != null) {
       return _database!;
     }
 
+    // Caso ainda não exista,
+    // inicializa o banco.
     _database = await _initDatabase();
     return _database!;
   }
 
+  // Método responsável por abrir ou criar o banco.
   static Future<Database> _initDatabase() async {
+    // Obtém a pasta onde o banco será salvo.
     final databasePath = await getDatabasesPath();
+    // Junta o caminho da pasta com o nome do banco.
     final path = join(databasePath, databaseName);
 
     return openDatabase(
@@ -133,14 +138,14 @@ class AppDatabase {
     }
 
     if (oldVersion < 4) {
-  // Foto de perfil do usuário local.
-  // Salvamos em base64 para funcionar no Chrome, Android e Windows.
-  await _safeAddColumn(
-    db,
-    table: 'users',
-    columnDefinition: 'profilePhotoUrl TEXT',
-  );
-}
+      // Foto de perfil do usuário local.
+      // Salvamos em base64 para funcionar no Chrome, Android e Windows.
+      await _safeAddColumn(
+        db,
+        table: 'users',
+        columnDefinition: 'profilePhotoUrl TEXT',
+      );
+    }
   }
 
   static Future<void> _createUsersTable(Database db) async {
