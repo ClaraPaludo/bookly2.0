@@ -6,11 +6,14 @@ import '../pages/deadlines_page.dart';
 import '../pages/profile_pages.dart';
 
 class AppBottomNavigation extends StatelessWidget {
+  // Índice da página atualmente selecionada.
   final int currentIndex;
 
   const AppBottomNavigation({super.key, required this.currentIndex});
 
+  // Responsável por trocar de página ao clicar em um item da barra.
   void _changePage(BuildContext context, int index) {
+    // Evita recarregar a mesma página.
     if (index == currentIndex) return;
 
     final pages = <Widget>[
@@ -20,6 +23,7 @@ class AppBottomNavigation extends StatelessWidget {
       const ProfilePage(),
     ];
 
+    // Substitui a página atual pela página selecionada.
     Navigator.of(
       context,
     ).pushReplacement(MaterialPageRoute(builder: (_) => pages[index]));
@@ -28,7 +32,9 @@ class AppBottomNavigation extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return NavigationBar(
+      // Define qual item ficará destacado.
       selectedIndex: currentIndex,
+      // Chama o método para trocar de página
       onDestinationSelected: (index) => _changePage(context, index),
       destinations: const [
         NavigationDestination(

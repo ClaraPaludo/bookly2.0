@@ -22,6 +22,7 @@ class ExpandableFriendCard extends StatefulWidget {
 }
 
 class _ExpandableFriendCardState extends State<ExpandableFriendCard> {
+  // Controla se o card está expandido ou recolhido.
   bool expanded = false;
 
   @override
@@ -67,6 +68,7 @@ class _ExpandableFriendCardState extends State<ExpandableFriendCard> {
             ),
           ),
 
+          // Exibe as informações extras apenas quando expandido.
           if (expanded)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
